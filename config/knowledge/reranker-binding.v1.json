@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "provider": "siliconflow_cohere_compatible",
+  "binding": "cohere",
+  "endpoint": "https://api.siliconflow.cn/v1/rerank",
+  "model": "Qwen/Qwen3-Reranker-8B",
+  "fallbacks": [
+    "Qwen/Qwen3-Reranker-4B",
+    "BAAI/bge-reranker-v2-m3"
+  ],
+  "top_n": 12,
+  "minimum_score": 0.0,
+  "max_async": 8,
+  "timeout_seconds": 30
+}

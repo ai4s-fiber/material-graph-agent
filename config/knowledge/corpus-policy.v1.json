@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "server_capacity_gb": 130,
+  "minimum_free_bytes": 34359738368,
+  "hard_stop_free_bytes": 27917287424,
+  "derived_data_target_bytes": 80530636800,
+  "derived_data_hard_cap_bytes": 85899345920,
+  "filesystem_alert_ratio": 0.75,
+  "filesystem_stop_ratio": 0.8,
+  "spool": {
+    "max_total_bytes": 8589934592,
+    "max_object_bytes": 1073741824,
+    "max_active_objects": 4,
+    "abandoned_ttl_seconds": 3600
+  },
+  "sources": [
+    {
+      "root_id": "document_data_1",
+      "display_name": "文档数据1",
+      "verified_size_gb": 621,
+      "pdf_count": 222169,
+      "literature_size_gb": 592,
+      "patent_size_gb": 29,
+      "patent_year_start": 1986,
+      "patent_year_end": 2025,
+      "patent_2025_pdf_count": 2435,
+      "patent_manifest_present": false,
+      "patent_metadata_strategy": "filename_publication_number_then_text_layer",
+      "physical_material_type_count": 17,
+      "physical_material_type_ids": [
+        "01_polymer_plastic",
+        "02_fiber_textile_nonwoven",
+        "03_composites_reinforced_materials",
+        "04_coating_surface_interface",
+        "05_flame_retardant_fire_thermal_protection",
+        "06_nanocarbon_2d_nanomaterials",
+        "07_membrane_filter_separation",
+        "08_adsorption_catalysis_environment",
+        "09_energy_battery_electrochemical",
+        "10_electronic_optical_sensor_materials",
+        "11_biomaterials_medical_healthcare",
+        "12_ceramic_glass_inorganic",
+        "13_metal_alloy_corrosion",
+        "14_porous_foam_aerogel_pcm_insulation",
+        "15_sustainable_biobased_recycling_packaging",
+        "16_testing_characterization_modeling",
+        "99_general_materials"
+      ],
+      "deduplicated_record_count": 216339,
+      "existing_pdf_record_count": 197866,
+      "no_source_record_count": 18473,
+      "keyword_taxonomy_field": "top_categories",
+      "metadata_formats": ["csv", "jsonl"],
+      "mode": "metadata_first_selective_parse"
+    },
+    {
+      "root_id": "data_2",
+      "display_name": "文档数据2",
+      "verified_size_gb": 137,
+      "file_count": 31076,
+      "usable_size_gb": 35.6,
+      "excluded_process_size_gb": 102,
+      "included_slice_id": "approved_candidate_data",
+      "excluded_slice_id": "process_data",
+      "excluded_body_policy": "never_open"
+    },
+    {
+      "root_id": "data_3",
+      "display_name": "文档数据3",
+      "verified_size_gb": 16,
+      "pdf_count": 3751,
+      "deduplicate_against": "document_data_1",
+      "deduplication_keys": ["normalized_doi", "sha256"],
+      "mode": "metadata_first_selective_parse"
+    }
+  ]
+}

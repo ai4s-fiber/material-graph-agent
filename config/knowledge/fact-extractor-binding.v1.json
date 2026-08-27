@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "provider": "openai_compatible",
+  "binding": "responses_json_schema",
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-v4-flash",
+  "model_version": "deepseek-v4-flash-0731-observed-2026-08-26",
+  "schema_generation_id": "material-fact-extractor-json-schema-v1",
+  "timeouts": {
+    "connect_seconds": 10,
+    "read_seconds": 180,
+    "write_seconds": 30,
+    "pool_seconds": 10
+  }
+}

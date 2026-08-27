@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "generation_id": "textbook-material-entity-pool-v10",
+  "providers": [
+    {
+      "provider_id": "deepseek_v4_flash",
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-v4-flash",
+      "credential_env": "DEEPSEEK_API_KEY",
+      "max_async": 16,
+      "timeout_seconds": 180,
+      "extra_body": {
+        "thinking": {
+          "type": "disabled"
+        }
+      }
+    }
+  ]
+}

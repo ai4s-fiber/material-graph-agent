@@ -1,0 +1,27 @@
+OmniMat Proprietary Software Notice
+===================================
+
+Copyright (c) 2026 FaFa. All rights reserved.
+
+This software and its associated source code, documentation, assets, and
+configuration files (the "Software") are proprietary and confidential.
+
+No permission is granted to use, copy, modify, merge, publish, distribute,
+sublicense, sell, reverse engineer, or create derivative works from the
+Software, in whole or in part, except under a separate written agreement
+signed by the copyright owner.
+
+Access to this repository does not grant any license or other rights in the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT
+PERMITTED BY LAW, THE COPYRIGHT OWNER SHALL NOT BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+Files and components carrying their own license notice or SPDX identifier are
+excluded from this notice and remain governed by their respective terms. The
+repository preserves those notices under `third_party/`,
+`omnimat-official/docs/THIRD_PARTY_NOTICES.md`, and other file-specific
+locations documented in `docs/third_party.md`.

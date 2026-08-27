@@ -1,0 +1,934 @@
+diff --git a/synology_api/auth.py b/synology_api/auth.py
+index 5a999074f9614dbc6e33400cfcff6eda00f1124e..f6c2e475f7ea2b289005afb406cd26fdb77372df 100644
+--- a/synology_api/auth.py
++++ b/synology_api/auth.py
+@@ -66,6 +66,10 @@ class Authentication:
+         Device name for device binding.
+     quickconnect_id : str, optional
+         QuickConnect ID for relay-based access.
++    enable_device_token : bool, optional
++        Request an in-memory DSM device token over HTTPS. Disabled by default.
++    did : str, optional
++        Existing DSM device token returned as ``did`` by a previous login.
+     """
+ 
+     def __init__(self,
+@@ -77,11 +81,13 @@ class Authentication:
+                  cert_verify: bool = False,
+                  dsm_version: int = 7,
+                  debug: bool = True,
+-                 otp_code: Optional[str] = None,
+-                 device_id: Optional[str] = None,
++                 otp_code: Optional[str] = None,
++                 device_id: Optional[str] = None,
+                  device_name: Optional[str] = None,
+-                 quickconnect_id: Optional[str] = None
+-                 ) -> None:
++                 quickconnect_id: Optional[str] = None,
++                 enable_device_token: bool = False,
++                 did: Optional[str] = None,
++                 ) -> None:
+         """
+         Initialize the Authentication object for Synology DSM.
+ 
+@@ -112,6 +118,13 @@ class Authentication:
+         quickconnect_id : str, optional
+             QuickConnect ID for relay-based access. When provided, HTTPS is
+             always used and `ip_address`/`port` are not required.
++        enable_device_token : bool, optional
++            Request a DSM device token over HTTPS and retain it in memory.
++            Defaults to ``False`` and never persists the token. Supplying the
++            legacy ``device_id`` and ``device_name`` pair enables it too.
++        did : str, optional
++            Existing DSM device token. ``device_id`` remains accepted as a
++            backwards-compatible alias.
+ 
+         Returns
+         -------
+@@ -140,10 +153,36 @@ class Authentication:
+         self._session_expire: bool = True
+         self._verify: bool = cert_verify
+         self._version: int = dsm_version
+-        self._debug: bool = debug
+-        self._otp_code: Optional[str] = otp_code
+-        self._device_id: Optional[str] = device_id
+-        self._device_name: Optional[str] = device_name
++        self._debug: bool = debug
++        self._otp_code: Optional[str] = otp_code
++        if not isinstance(enable_device_token, bool):
++            raise ValueError("enable_device_token must be a boolean")
++        if did is not None and device_id is not None and did != device_id:
++            raise ValueError("did and device_id must identify the same device")
++        resolved_did = did if did is not None else device_id
++        if resolved_did is not None and (
++                not isinstance(resolved_did, str) or not resolved_did):
++            raise ValueError("did must be a non-empty string")
++        if device_name is not None and (
++                not isinstance(device_name, str) or not device_name):
++            raise ValueError("device_name must be a non-empty string")
++        legacy_device_binding = (
++            resolved_did is not None or device_name is not None
++        )
++        if legacy_device_binding and not enable_device_token and (
++                resolved_did is None or device_name is None):
++            raise ValueError(
++                "device_id/did and device_name must be set together")
++        effective_device_token = enable_device_token or legacy_device_binding
++        if effective_device_token and device_name is None:
++            raise ValueError(
++                "device_name is required when device tokens are enabled")
++        if effective_device_token and not self._secure:
++            raise ValueError("device tokens require HTTPS transport")
++        self._enable_device_token: bool = effective_device_token
++        self._device_id: Optional[str] = resolved_did
++        self._did: Optional[str] = resolved_did
++        self._device_name: Optional[str] = device_name
+ 
+         if self._verify is False:
+             disable_warnings(InsecureRequestWarning)
+@@ -268,9 +307,14 @@ class Authentication:
+                 f"{quickconnect_origin}{pingpong_path}", verify=self._verify)
+             ping_response.raise_for_status()
+         except requests.exceptions.ConnectionError as e:
++            self._clear_local_session()
+             raise SynoConnectionError(error_message=e.args[0])
+         except requests.exceptions.HTTPError as e:
++            self._clear_local_session()
+             raise HTTPError(error_message=str(e.args))
++        except Exception:
++            self._clear_local_session()
++            raise
+ 
+         return f"{quickconnect_origin}/webapi/"
+ 
+@@ -290,9 +334,10 @@ class Authentication:
+         """
+         if not self._quickconnect_headers:
+             return headers
+-        merged_headers = self._quickconnect_headers.copy()
+-        if headers:
+-            merged_headers.update(headers)
++        merged_headers = headers.copy() if headers else {}
++        # Relay routing headers are transport invariants. Request-specific
++        # headers such as Range remain additive but cannot replace them.
++        merged_headers.update(self._quickconnect_headers)
+         return merged_headers
+ 
+     def _get(self, url: str, params: Optional[dict[str, object]] = None, **kwargs) -> requests.Response:
+@@ -403,7 +448,7 @@ class Authentication:
+         """
+         return self._verify
+ 
+-    def login(self) -> None:
++    def login(self) -> None:
+         """
+         Log in to the Synology DSM and obtain a session ID and token.
+ 
+@@ -418,6 +463,9 @@ class Authentication:
+         LoginError
+             If login fails due to an API error.
+         """
++        if self._quickconnect_id and self._requests_session is None:
++            self._base_url = self._build_quickconnect_base_url()
++
+         login_api = 'entry.cgi' if self._quickconnect_id else 'auth.cgi'
+         params = {'api': "SYNO.API.Auth", 'version': self._version,
+                   'method': 'login', 'enable_syno_token': 'yes', 'client': 'browser'}
+@@ -425,29 +473,28 @@ class Authentication:
+         if self._version >= 7:
+             params.update({'ik_message': self.get_ik_message()})
+ 
+-        params_enc = {
+-            'account': self._username,
+-            'enable_device_token': 'no',
++        params_enc = {
++            'account': self._username,
++            'enable_device_token': 'yes' if self._enable_device_token else 'no',
+             'logintype': 'local',
+             'otp_code': '',
+             'rememberme': 0,
+             'passwd': self._password,
+-            'session': 'webui',  # Hardcoded for handle non administrator users API usage
+-            'format': 'cookie'
+-        }
+-        if self._secure:
+-            params.update(params_enc)
+-        else:
+-            encrypted_params = self.encrypt_params(params_enc)
+-            params.update(encrypted_params)
+-
+-        if self._otp_code:
+-            params['otp_code'] = self._otp_code
+-        if self._device_id is not None and self._device_name is not None:
+-            params['device_id'] = self._device_id
+-            params['device_name'] = self._device_name
+-        if self._device_id is not None and self._device_name is None or self._device_id is None and self._device_name is not None:
+-            print("device_id and device_name must be set together")
++            'session': 'webui',  # Hardcoded for handle non administrator users API usage
++            'format': 'cookie'
++        }
++        if self._enable_device_token:
++            params_enc['device_name'] = self._device_name
++            if self._did is not None:
++                params_enc['device_id'] = self._did
++        if self._secure:
++            params.update(params_enc)
++        else:
++            encrypted_params = self.encrypt_params(params_enc)
++            params.update(encrypted_params)
++
++        if self._otp_code:
++            params['otp_code'] = self._otp_code
+ 
+         if not self._session_expire and self._sid is not None:
+             self._session_expire = False
+@@ -475,11 +522,18 @@ class Authentication:
+                 session_request_json = session_request.json()
+ 
+             # Check dsm response for error:
+-            error_code = self._get_error_code(session_request_json)
+-            if not error_code:
+-                self._sid = session_request_json['data']['sid']
+-                self._syno_token = session_request_json['data']['synotoken']
+-                self._finish_noise_handshake(session_request_json['data'])
++            error_code = self._get_error_code(session_request_json)
++            if not error_code:
++                login_data = session_request_json['data']
++                self._sid = login_data['sid']
++                self._syno_token = login_data['synotoken']
++                returned_did = login_data.get('did')
++                if (self._enable_device_token
++                        and isinstance(returned_did, str)
++                        and returned_did):
++                    self._did = returned_did
++                    self._device_id = returned_did
++                self._finish_noise_handshake(login_data)
+                 self._session_expire = False
+                 if self._debug is True:
+                     print('User logged in, new session started!')
+@@ -516,7 +570,25 @@ class Authentication:
+             self._noise_connection.get_handshake_hash()
+         )
+ 
+-    def logout(self) -> None:
++    def _clear_local_session(self) -> None:
++        """Drop all local authentication state without persisting secrets."""
++        session = self._requests_session
++        self._requests_session = None
++        self._session_expire = True
++        self._sid = None
++        self._syno_token = None
++        self._noise_connection = None
++        self._noise_handshake_hash = None
++        self._quickconnect_headers = {}
++        if session is not None:
++            try:
++                session.close()
++            except Exception:
++                # Local state must still be discarded if transport shutdown
++                # itself fails. Remote/API errors remain the primary failure.
++                pass
++
++    def logout(self) -> None:
+         """
+         Log out from the Synology DSM and invalidate the session.
+ 
+@@ -535,37 +607,36 @@ class Authentication:
+         param = {'version': self._version,
+                  'method': 'logout', 'session': 'webui'}
+ 
+-        if USE_EXCEPTIONS:
+-            try:
++        try:
++            if USE_EXCEPTIONS:
++                try:
++                    response = self._get(
++                        self._base_url + logout_api, param, verify=self._verify)
++                    response.raise_for_status()
++                    response_json = response.json()
++                    error_code = self._get_error_code(response_json)
++                except requests.exceptions.ConnectionError as e:
++                    raise SynoConnectionError(error_message=e.args[0])
++                except requests.exceptions.HTTPError as e:
++                    raise HTTPError(error_message=str(e.args))
++                except requests.exceptions.JSONDecodeError as e:
++                    raise JSONDecodeError(error_message=str(e.args))
++            else:
+                 response = self._get(
+-                    self._base_url + logout_api, param, verify=self._verify)
+-                response.raise_for_status()
+-                response_json = response.json()
+-                error_code = self._get_error_code(response_json)
+-            except requests.exceptions.ConnectionError as e:
+-                raise SynoConnectionError(error_message=e.args[0])
+-            except requests.exceptions.HTTPError as e:
+-                raise HTTPError(error_message=str(e.args))
+-            except requests.exceptions.JSONDecodeError as e:
+-                raise JSONDecodeError(error_message=str(e.args))
+-        else:
+-            response = self._get(
+-                self._base_url + logout_api, param, verify=self._verify)
+-            error_code = self._get_error_code(response.json())
+-        self._session_expire = True
+-        self._sid = None
+-        self._noise_connection = None
+-        self._noise_handshake_hash = None
+-        if self._debug is True:
+-            if not error_code:
+-                print('Successfully logged out.')
+-            else:
+-                print('Logout failed: ' +
+-                      self._get_error_message(error_code, 'Auth'))
+-        if USE_EXCEPTIONS and error_code:
+-            raise LogoutError(error_code=error_code)
+-
+-        return
++                    self._base_url + logout_api, param, verify=self._verify)
++                error_code = self._get_error_code(response.json())
++            if self._debug is True:
++                if not error_code:
++                    print('Successfully logged out.')
++                else:
++                    print('Logout failed: ' +
++                          self._get_error_message(error_code, 'Auth'))
++            if USE_EXCEPTIONS and error_code:
++                raise LogoutError(error_code=error_code)
++        finally:
++            self._clear_local_session()
++
++        return
+ 
+     def get_api_list(self, app: Optional[str] = None) -> None:
+         """
+@@ -1001,6 +1072,83 @@ class Authentication:
+         else:
+             return response
+ 
++    def request_stream(self,
++                       api_name: str,
++                       api_path: str,
++                       req_param: dict[str, object],
++                       method: str = 'get',
++                       data: Any = None,
++                       headers: Optional[dict[str, object]] = None,
++                       timeout: Optional[
++                           Union[float, tuple[float, float]]
++                       ] = None,
++                       ) -> requests.Response:
++        """Open a streaming DSM response on the authenticated HTTP session.
++
++        The response body is never decoded or buffered by this method.  The
++        caller owns the returned response and must always call ``close()``.
++        QuickConnect relay cookies and Origin/Referer headers are preserved by
++        reusing the session created during relay discovery.
++
++        Parameters
++        ----------
++        api_name : str
++            DSM API name, for example ``SYNO.FileStation.Download``.
++        api_path : str
++            API endpoint path returned by ``SYNO.API.Info``.
++        req_param : dict
++            Request parameters. The caller's dictionary is not modified.
++        method : str, optional
++            HTTP method, either ``get`` or ``post``. Defaults to ``get``.
++        data : object, optional
++            Optional POST body.
++        headers : dict, optional
++            Additional headers such as ``Range``.
++        timeout : float or tuple, optional
++            Requests connect/read timeout.
++
++        Returns
++        -------
++        requests.Response
++            An open response configured with ``stream=True``.
++        """
++        normalized_method = method.lower()
++        if normalized_method not in ('get', 'post'):
++            raise ValueError("Unsupported request method: %s" % method)
++
++        params = {
++            key: str(value).lower() if isinstance(value, bool) else value
++            for key, value in req_param.items()
++        }
++        params['_sid'] = self._sid
++        url = ('%s%s' % (self._base_url, api_path)) + '?api=' + api_name
++        request_headers = self._get_request_headers(headers)
++        request_options = {
++            'verify': self._verify,
++            'headers': request_headers,
++            'stream': True,
++        }
++        if timeout is not None:
++            request_options['timeout'] = timeout
++
++        if self._requests_session is None:
++            self._requests_session = requests.Session()
++
++        try:
++            if normalized_method == 'get':
++                return self._get(url, params, **request_options)
++            if data is None:
++                return self._post(url, params, **request_options)
++            upload_url = ('%s%s' % (self._base_url, api_path)) + '/' + api_name
++            return self._post(
++                upload_url,
++                data=data,
++                params=params,
++                **request_options,
++            )
++        except requests.exceptions.ConnectionError as e:
++            raise SynoConnectionError(error_message=e.args[0])
++
+     def request_data(self,
+                      api_name: str,
+                      api_path: str,
+@@ -1384,16 +1532,21 @@ class Authentication:
+         return self._base_url
+ 
+     @property
+-    def syno_token(self) -> str:
++    def syno_token(self) -> Optional[str]:
+         """
+         Get the Synology token for API requests.
+ 
+         Returns
+         -------
+-        str
+-            Synology token.
+-        """
+-        return self._syno_token
++        str or None
++            Synology token while logged in, otherwise None.
++        """
++        return self._syno_token
++
++    @property
++    def did(self) -> Optional[str]:
++        """Return the in-memory DSM device token, if explicitly enabled."""
++        return self._did
+ 
+ 
+ class AESCipher(object):
+diff --git a/synology_api/base_api.py b/synology_api/base_api.py
+index 331656ed922172633207bdaf13ab26ab0d79da64..3fdbd365a2f628b58b8a346fa1e5ce951ec903f4 100644
+--- a/synology_api/base_api.py
++++ b/synology_api/base_api.py
+@@ -62,6 +62,8 @@ class BaseApi(object):
+                  device_name: Optional[str] = None,
+                  application: str = 'Core',
+                  quickconnect_id: Optional[str] = None,
++                 enable_device_token: bool = False,
++                 did: Optional[str] = None,
+                  ) -> None:
+         """
+         Initialize the BaseApi object and create or reuse a session.
+@@ -95,6 +97,10 @@ class BaseApi(object):
+         quickconnect_id : str, optional
+             QuickConnect ID for relay-based access. When provided, `ip_address`
+             and `port` are not required.
++        enable_device_token : bool, optional
++            Request a DSM device token over HTTPS and keep it in memory only.
++        did : str, optional
++            Existing DSM device token. `device_id` remains a compatible alias.
+ 
+         Returns
+         -------
+@@ -118,7 +124,8 @@ class BaseApi(object):
+ 
+             self.session = syn.Authentication(
+                 ip_address, port, username, password, secure, cert_verify, dsm_version, debug, otp_code,
+-                device_id, device_name, quickconnect_id
++                device_id, device_name, quickconnect_id,
++                enable_device_token=enable_device_token, did=did
+             )
+             self.session.login()
+             self.session.get_api_list(self.application)
+@@ -129,6 +136,7 @@ class BaseApi(object):
+ 
+         # Initialize other attributes from the session
+         self.request_data: Any = self.session.request_data
++        self.request_stream: Any = self.session.request_stream
+         self.batch_request = self.session.request_multi_datas
+         self.core_list: Any = self.session.app_api_list
+         self.gen_list: Any = self.session.full_api_list
+@@ -145,7 +153,9 @@ class BaseApi(object):
+             Action, no return values.
+         """
+         if self.session:
+-            self.session.logout()
+-            if BaseApi.shared_session == self.session:
+-                BaseApi.shared_session = None
++            try:
++                self.session.logout()
++            finally:
++                if BaseApi.shared_session == self.session:
++                    BaseApi.shared_session = None
+         return
+diff --git a/synology_api/filestation.py b/synology_api/filestation.py
+index 58e455a5964393dc8adc07d11c169380c2305f52..0bfad11e81328fb3db29b20ef1e90d971259a1e6 100644
+--- a/synology_api/filestation.py
++++ b/synology_api/filestation.py
+@@ -129,7 +129,9 @@ class FileStation(base_api.BaseApi):
+                  device_id: Optional[str] = None,
+                  device_name: Optional[str] = None,
+                  interactive_output: bool = True,
+-                 quickconnect_id: Optional[str] = None
++                 quickconnect_id: Optional[str] = None,
++                 enable_device_token: bool = False,
++                 did: Optional[str] = None,
+                  ) -> None:
+         """
+         Initialize FileStation API client.
+@@ -163,10 +165,16 @@ class FileStation(base_api.BaseApi):
+         quickconnect_id : str, optional
+             QuickConnect ID for relay-based access. When provided, `ip_address`
+             and `port` are not required.
++        enable_device_token : bool, optional
++            Request a DSM device token over HTTPS and keep it in memory only.
++        did : str, optional
++            Existing DSM device token. `device_id` remains a compatible alias.
+         """
+         super(FileStation, self).__init__(ip_address, port, username, password, secure, cert_verify,
+                                           dsm_version, debug, otp_code, device_id, device_name, 'FileStation',
+-                                          quickconnect_id=quickconnect_id)
++                                          quickconnect_id=quickconnect_id,
++                                          enable_device_token=enable_device_token,
++                                          did=did)
+ 
+         self._dir_taskid: str = ''
+         self._dir_taskid_list: list[str] = []
+diff --git a/tests/test_auth.py b/tests/test_auth.py
+index 3595213422e0c03ae6b02fa8d0a89de7b8610df6..7760e52f36d3210ce98ef07cef2aaa8d37e33552 100644
+--- a/tests/test_auth.py
++++ b/tests/test_auth.py
+@@ -4,8 +4,11 @@ import json
+ import unittest
+ from unittest.mock import MagicMock, patch
+ 
++import requests
++
+ from synology_api.auth import Authentication
+ from synology_api.error_codes import CODE_SUCCESS, CODE_UNKNOWN
++from synology_api.exceptions import LogoutError, SynoConnectionError
+ 
+ 
+ class FakeCipherState:
+@@ -55,6 +58,13 @@ def _make_auth():
+     instance._noise_handshake_hash = None
+     instance._requests_session = None
+     instance._quickconnect_headers = {}
++    instance._quickconnect_id = None
++    instance._version = 7
++    instance._session_expire = False
++    instance._enable_device_token = False
++    instance._device_id = None
++    instance._device_name = None
++    instance._did = None
+     return instance
+ 
+ 
+@@ -151,6 +161,277 @@ class TestAuthenticationRequestHash(unittest.TestCase):
+         response.raise_for_status.assert_called_once_with()
+ 
+ 
++class TestAuthenticationStreaming(unittest.TestCase):
++    """Tests for unbuffered requests on the authenticated session."""
++
++    def test_request_stream_reuses_session_and_preserves_relay_headers(self):
++        auth = _make_auth()
++        auth._quickconnect_headers = {
++            'Origin': 'https://nas.quickconnect.to',
++            'Referer': 'https://nas.quickconnect.to',
++        }
++        session = MagicMock()
++        response = MagicMock()
++        session.get.return_value = response
++        auth._requests_session = session
++        params = {'version': 2, 'method': 'download', 'preview': True}
++
++        result = auth.request_stream(
++            'SYNO.FileStation.Download',
++            'entry.cgi',
++            params,
++            headers={
++                'Range': 'bytes=3-',
++                'Origin': 'https://invalid.example',
++                'Referer': 'https://invalid.example',
++            },
++            timeout=(2.0, 30.0),
++        )
++
++        self.assertIs(result, response)
++        self.assertEqual(
++            session.get.call_args.args[0],
++            'http://nas:5000/webapi/entry.cgi?api=SYNO.FileStation.Download',
++        )
++        self.assertEqual(
++            session.get.call_args.kwargs['params'],
++            {
++                'version': 2,
++                'method': 'download',
++                'preview': 'true',
++                '_sid': 'sid',
++            },
++        )
++        self.assertEqual(
++            session.get.call_args.kwargs['headers'],
++            {
++                'Origin': 'https://nas.quickconnect.to',
++                'Referer': 'https://nas.quickconnect.to',
++                'X-SYNO-TOKEN': 'token',
++                'Range': 'bytes=3-',
++            },
++        )
++        self.assertTrue(session.get.call_args.kwargs['stream'])
++        self.assertEqual(session.get.call_args.kwargs['timeout'], (2.0, 30.0))
++        self.assertEqual(
++            params,
++            {'version': 2, 'method': 'download', 'preview': True},
++        )
++        response.close.assert_not_called()
++        response.raise_for_status.assert_not_called()
++
++    @patch('synology_api.auth.requests.Session')
++    def test_request_stream_creates_one_session_when_direct_auth_has_none(
++            self, session_class):
++        auth = _make_auth()
++        session = MagicMock()
++        response = MagicMock()
++        session.get.return_value = response
++        session_class.return_value = session
++
++        result = auth.request_stream(
++            'SYNO.FileStation.Download',
++            'entry.cgi',
++            {'version': 2, 'method': 'download'},
++        )
++
++        self.assertIs(result, response)
++        self.assertIs(auth._requests_session, session)
++        session_class.assert_called_once_with()
++
++    def test_request_stream_translates_connection_errors_without_closing(self):
++        auth = _make_auth()
++        session = MagicMock()
++        session.get.side_effect = requests.exceptions.ConnectionError(
++            'offline')
++        auth._requests_session = session
++
++        with self.assertRaises(SynoConnectionError):
++            auth.request_stream(
++                'SYNO.FileStation.Download',
++                'entry.cgi',
++                {'version': 2, 'method': 'download'},
++            )
++
++        session.close.assert_not_called()
++
++    def test_request_stream_rejects_unknown_method_before_transport(self):
++        auth = _make_auth()
++        auth._requests_session = MagicMock()
++
++        with self.assertRaises(ValueError):
++            auth.request_stream('api', 'entry.cgi', {}, method='delete')
++
++        auth._requests_session.request.assert_not_called()
++
++
++class TestAuthenticationDeviceToken(unittest.TestCase):
++    """Tests for explicit, memory-only DSM device token support."""
++
++    @staticmethod
++    def _login_response(did=None):
++        data = {'sid': 'sid-new', 'synotoken': 'token-new'}
++        if did is not None:
++            data['did'] = did
++        response = MagicMock()
++        response.json.return_value = {'success': True, 'data': data}
++        return response
++
++    def test_device_token_is_disabled_by_default(self):
++        auth = Authentication(
++            'nas', '5001', 'user', 'password', secure=True,
++            dsm_version=6, debug=False,
++        )
++        response = self._login_response(did='must-not-be-adopted')
++
++        with patch.object(auth, '_post', return_value=response) as post:
++            auth.login()
++
++        login_params = post.call_args.kwargs['data']
++        self.assertEqual(login_params['enable_device_token'], 'no')
++        self.assertNotIn('device_id', login_params)
++        self.assertNotIn('device_name', login_params)
++        self.assertIsNone(auth.did)
++
++    def test_enabled_device_token_sends_did_and_captures_rotated_value(self):
++        auth = Authentication(
++            'nas', '5001', 'user', 'password', secure=True,
++            dsm_version=6, debug=False,
++            device_name='ai4s-reader', enable_device_token=True,
++            did='did-old',
++        )
++        response = self._login_response(did='did-new')
++
++        with patch.object(auth, '_post', return_value=response) as post, \
++                patch('builtins.open') as open_file, \
++                patch('builtins.print') as print_output:
++            auth.login()
++
++        login_params = post.call_args.kwargs['data']
++        self.assertEqual(login_params['enable_device_token'], 'yes')
++        self.assertEqual(login_params['device_id'], 'did-old')
++        self.assertEqual(login_params['device_name'], 'ai4s-reader')
++        self.assertEqual(auth.did, 'did-new')
++        open_file.assert_not_called()
++        print_output.assert_not_called()
++
++    def test_legacy_device_id_pair_still_enables_device_token(self):
++        auth = Authentication(
++            'nas', '5001', 'user', 'password', secure=True,
++            dsm_version=6, debug=False,
++            device_id='legacy-did', device_name='legacy-reader',
++        )
++        response = self._login_response(did='rotated-did')
++
++        with patch.object(auth, '_post', return_value=response) as post:
++            auth.login()
++
++        login_params = post.call_args.kwargs['data']
++        self.assertEqual(login_params['enable_device_token'], 'yes')
++        self.assertEqual(login_params['device_id'], 'legacy-did')
++        self.assertEqual(login_params['device_name'], 'legacy-reader')
++        self.assertEqual(auth.did, 'rotated-did')
++
++    @patch('synology_api.auth.requests.post')
++    @patch('synology_api.auth.requests.Session')
++    def test_device_token_rejects_plain_http_before_transport(
++            self, session_class, post):
++        with self.assertRaisesRegex(ValueError, 'require HTTPS'):
++            Authentication(
++                'nas', '5000', 'user', 'password', secure=False,
++                dsm_version=6, debug=False,
++                enable_device_token=True,
++                did='secret-did', device_name='ai4s-reader',
++            )
++
++        session_class.assert_not_called()
++        post.assert_not_called()
++
++    def test_device_token_options_are_validated_without_logging(self):
++        with self.assertRaises(ValueError):
++            Authentication(
++                'nas', '5001', 'user', 'password',
++                enable_device_token=True,
++            )
++        with self.assertRaises(ValueError):
++            Authentication(
++                'nas', '5001', 'user', 'password',
++                device_id='one', did='two',
++            )
++        with self.assertRaises(ValueError):
++            Authentication(
++                'nas', '5001', 'user', 'password',
++                device_id='one',
++            )
++
++
++class TestAuthenticationLogoutCleanup(unittest.TestCase):
++    """Tests that logout always destroys local authentication state."""
++
++    @staticmethod
++    def _logged_in_auth(response=None):
++        auth = _make_auth()
++        auth._noise_connection = FakeNoiseConnection()
++        auth._noise_handshake_hash = 'handshake'
++        auth._quickconnect_headers = {'Origin': 'relay'}
++        session = MagicMock()
++        if response is not None:
++            session.get.return_value = response
++        auth._requests_session = session
++        return auth, session
++
++    def assert_logged_out(self, auth, session):
++        self.assertIsNone(auth.sid)
++        self.assertIsNone(auth.syno_token)
++        self.assertIsNone(auth._noise_connection)
++        self.assertIsNone(auth._noise_handshake_hash)
++        self.assertIsNone(auth._requests_session)
++        self.assertEqual(auth._quickconnect_headers, {})
++        self.assertTrue(auth._session_expire)
++        session.close.assert_called_once_with()
++
++    def test_logout_success_clears_and_closes_everything(self):
++        response = MagicMock()
++        response.json.return_value = {'success': True}
++        auth, session = self._logged_in_auth(response)
++
++        auth.logout()
++
++        self.assert_logged_out(auth, session)
++
++    def test_logout_connection_failure_still_clears_and_closes(self):
++        auth, session = self._logged_in_auth()
++        session.get.side_effect = requests.exceptions.ConnectionError(
++            'offline')
++
++        with self.assertRaises(SynoConnectionError):
++            auth.logout()
++
++        self.assert_logged_out(auth, session)
++
++    def test_logout_api_failure_still_clears_and_closes(self):
++        response = MagicMock()
++        response.json.return_value = {'success': False, 'error': {'code': 105}}
++        auth, session = self._logged_in_auth(response)
++
++        with self.assertRaises(LogoutError):
++            auth.logout()
++
++        self.assert_logged_out(auth, session)
++
++    def test_session_close_failure_cannot_retain_local_secrets(self):
++        response = MagicMock()
++        response.json.return_value = {'success': True}
++        auth, session = self._logged_in_auth(response)
++        session.close.side_effect = RuntimeError('close failed')
++
++        auth.logout()
++
++        self.assertIsNone(auth.sid)
++        self.assertIsNone(auth.syno_token)
++        self.assertIsNone(auth._requests_session)
++
++
+ class GetErrorCodeTests(unittest.TestCase):
+     """Tests for Authentication._get_error_code (a @staticmethod)."""
+ 
+diff --git a/tests/test_quickconnect.py b/tests/test_quickconnect.py
+index 314af445a080f18fc3b1ef293da306aff12a25cb..b1dafd48d66c6972c9269f8f5539192cd4372dba 100644
+--- a/tests/test_quickconnect.py
++++ b/tests/test_quickconnect.py
+@@ -3,8 +3,11 @@
+ import unittest
+ from unittest.mock import ANY, MagicMock, patch
+ 
++import requests
++
+ from synology_api.auth import Authentication
+ from synology_api.base_api import BaseApi
++from synology_api.exceptions import SynoConnectionError
+ from synology_api.filestation import FileStation
+ 
+ 
+@@ -176,6 +179,27 @@ class TestQuickConnect(unittest.TestCase):
+             }
+         )
+ 
++    @patch("synology_api.auth.requests.Session")
++    @patch("synology_api.auth.requests.post")
++    def test_quickconnect_ping_failure_closes_relay_session(
++            self, post, session_class):
++        session = MagicMock()
++        session.get.side_effect = requests.exceptions.ConnectionError(
++            "relay unavailable")
++        session_class.return_value = session
++        post.side_effect = _quickconnect_post_responses()
++
++        with self.assertRaises(SynoConnectionError):
++            Authentication(
++                username="user",
++                password="pass",
++                quickconnect_id="my-nas",
++                cert_verify=False,
++                debug=False,
++            )
++
++        session.close.assert_called_once_with()
++
+     @patch("synology_api.base_api.syn.Authentication")
+     def test_base_api_accepts_quickconnect_without_ip_or_port(self, auth_class):
+         session = MagicMock()
+@@ -204,8 +228,11 @@ class TestQuickConnect(unittest.TestCase):
+             None,
+             None,
+             None,
+-            "my-nas"
++            "my-nas",
++            enable_device_token=False,
++            did=None,
+         )
++        self.assertIs(api.request_stream, session.request_stream)
+         session.login.assert_called_once()
+         session.get_api_list.assert_any_call("Core")
+         session.get_api_list.assert_any_call()
+@@ -245,9 +272,66 @@ class TestQuickConnect(unittest.TestCase):
+             None,
+             None,
+             "FileStation",
+-            quickconnect_id="my-nas"
++            quickconnect_id="my-nas",
++            enable_device_token=False,
++            did=None,
+         )
+ 
++    @patch("synology_api.filestation.base_api.BaseApi.__init__", autospec=True)
++    def test_filestation_passes_device_token_options(self, base_init):
++        def fake_base_init(instance, *args, **kwargs):
++            session = MagicMock()
++            session.app_api_list = {}
++            session.request_data = MagicMock()
++            instance.session = session
++            instance.request_data = session.request_data
++            instance.core_list = {}
++            instance.gen_list = {}
++            instance._sid = "sid-123"
++            instance.base_url = "https://my-nas.us.quickconnect.to/webapi/"
++
++        base_init.side_effect = fake_base_init
++
++        FileStation(
++            username="user",
++            password="pass",
++            device_name="ai4s-reader",
++            quickconnect_id="my-nas",
++            enable_device_token=True,
++            did="did-existing",
++        )
++
++        base_init.assert_called_once_with(
++            ANY,
++            None,
++            None,
++            "user",
++            "pass",
++            False,
++            False,
++            7,
++            True,
++            None,
++            None,
++            "ai4s-reader",
++            "FileStation",
++            quickconnect_id="my-nas",
++            enable_device_token=True,
++            did="did-existing",
++        )
++
++    def test_base_api_drops_shared_session_even_when_logout_raises(self):
++        api = BaseApi.__new__(BaseApi)
++        session = MagicMock()
++        session.logout.side_effect = RuntimeError("logout failed")
++        api.session = session
++        BaseApi.shared_session = session
++
++        with self.assertRaises(RuntimeError):
++            api.logout()
++
++        self.assertIsNone(BaseApi.shared_session)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "component": "synology-api",
+  "status": "vendored-wheel-source",
+  "license_files": {
+    "LICENSE.txt": "5b47b7106e8e24e18ac769c826250353b2b902ee62a02b9a19d1faf379425b4a"
+  },
+  "upstream": {
+    "repository": "https://github.com/N4S4/synology-api",
+    "tag": "v0.9.1",
+    "commit": "ca1a2ae730ecec42c4586034e49d331dc0123b02",
+    "tree": "454a756bf3bf2d12d0f3cf96d2b4d16b32d63e59"
+  },
+  "former_fork": {
+    "repository": "https://github.com/ai4s-fiber/synology-api",
+    "default_branch": "master",
+    "head": "18fda2de1577fd6272b9f701b8022252a3e3e21a",
+    "bundle_sha256": "6422b643b97e45c267c64dfbbd68431ae2f18e435f89f058d57a2343959959e5"
+  },
+  "variants": {
+    "v0.9.1-ai4s-streaming": {
+      "historical_commit": "64031edeb8165df21ca27f8da9485d028ba37be4",
+      "tree": "d7e44b31ac8fe0d51c464fdf4da3944fe0576595",
+      "patch_path": "patches/v0.9.1-ai4s-streaming.patch",
+      "patch_sha256": "c75e30ccd8c93132be492e656f97236468a2bd7781193f7703c900a6377ea348"
+    }
+  }
+}

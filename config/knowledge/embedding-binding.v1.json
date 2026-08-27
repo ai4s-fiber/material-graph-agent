@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "provider": "glm_openai_compatible",
+  "binding": "openai",
+  "base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "model": "embedding-3",
+  "dimensions": 1024,
+  "send_dimensions": true,
+  "use_base64": true,
+  "asymmetric": true,
+  "document_prefix": "NO_PREFIX",
+  "query_prefix": "为材料科学研究问题检索包含可核验材料组成、制备工艺、测试条件、性能值和来源定位的证据段落。查询：",
+  "max_input_tokens": 8192,
+  "batch_size": 32,
+  "max_async": 32,
+  "timeout_seconds": 90,
+  "normalize": true,
+  "distance": "cosine",
+  "postgres_vector_index_type": "HNSW_HALFVEC",
+  "generation_id": "glm-embedding-3-1024-halfvec-v1"
+}

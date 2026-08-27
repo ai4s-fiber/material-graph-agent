@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "provider": "glm_openai_compatible",
+  "binding": "openai",
+  "base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "model": "embedding-3",
+  "dimensions": 1024,
+  "send_dimensions": true,
+  "use_base64": true,
+  "asymmetric": true,
+  "document_prefix": "NO_PREFIX",
+  "query_prefix": "\u4e3a\u6750\u6599\u79d1\u5b66\u7814\u7a76\u95ee\u9898\u68c0\u7d22\u5305\u542b\u53ef\u6838\u9a8c\u6750\u6599\u7ec4\u6210\u3001\u5236\u5907\u5de5\u827a\u3001\u6d4b\u8bd5\u6761\u4ef6\u3001\u6027\u80fd\u503c\u548c\u6765\u6e90\u5b9a\u4f4d\u7684\u8bc1\u636e\u6bb5\u843d\u3002\u67e5\u8be2\uff1a",
+  "max_input_tokens": 8192,
+  "batch_size": 32,
+  "max_async": 32,
+  "timeout_seconds": 90,
+  "normalize": true,
+  "distance": "cosine",
+  "postgres_vector_index_type": "HNSW_HALFVEC",
+  "generation_id": "glm-embedding-3-1024-halfvec-v1"
+}

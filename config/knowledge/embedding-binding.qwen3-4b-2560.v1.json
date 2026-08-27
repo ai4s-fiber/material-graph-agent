@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "provider": "vllm_openai_compatible",
+  "binding": "openai",
+  "base_url": "http://host.docker.internal:31001/v1",
+  "model": "qwen3-embedding-4b",
+  "dimensions": 2560,
+  "send_dimensions": false,
+  "use_base64": false,
+  "asymmetric": true,
+  "precision": "bf16",
+  "document_prefix": "NO_PREFIX",
+  "query_prefix": "Instruct: 为材料科学研究问题检索包含可核验材料组成、制备工艺、测试条件、性能值和来源定位的证据段落。\nQuery: ",
+  "max_input_tokens": 8192,
+  "batch_size": 32,
+  "max_async": 4,
+  "timeout_seconds": 60,
+  "normalize": true,
+  "distance": "cosine",
+  "postgres_vector_index_type": "HNSW_HALFVEC",
+  "generation_id": "qwen3-embedding-4b-2560-bf16-v1",
+  "artifact_integrity": {
+    "status": "unresolved",
+    "required_model_manifest_path": "/home/cyy/dhu-zh-workspace/omnimat/evidence/embedding/qwen3-embedding-4b-model-manifest.v1.json",
+    "required_model_manifest_sha256": "UNRESOLVED_MODEL_ARTIFACT",
+    "model_directory_manifest_sha256": "UNRESOLVED_MODEL_ARTIFACT",
+    "runtime_environment_manifest_sha256": "UNRESOLVED_MODEL_ARTIFACT",
+    "required_model_artifacts": [
+      {
+        "path": "model-00001-of-00002.safetensors",
+        "sha256": "UNRESOLVED_MODEL_ARTIFACT"
+      },
+      {
+        "path": "model-00002-of-00002.safetensors",
+        "sha256": "UNRESOLVED_MODEL_ARTIFACT"
+      },
+      {
+        "path": "model.safetensors.index.json",
+        "sha256": "UNRESOLVED_MODEL_ARTIFACT"
+      },
+      {
+        "path": "config.json",
+        "sha256": "UNRESOLVED_MODEL_ARTIFACT"
+      },
+      {
+        "path": "tokenizer.json",
+        "sha256": "UNRESOLVED_MODEL_ARTIFACT"
+      }
+    ]
+  }
+}

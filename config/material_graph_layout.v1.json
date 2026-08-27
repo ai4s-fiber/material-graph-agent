@@ -1,0 +1,77 @@
+{
+  "schema": "material-graph.layout-config.v1",
+  "seed": 20260730,
+  "layout_lineage": {
+    "parent_layout_version": "textbook-graph-layout-v1",
+    "revision": "satellite-groups-v1"
+  },
+  "satellite_grouping": {
+    "algorithm": "dominant-entity-type-by-component-node-mass.v1",
+    "group_count": 5,
+    "top_type_group_count": 4,
+    "residual_group_label": "外围分量 · 其他实体类型",
+    "center_repulsion_iterations": 14,
+    "center_minimum_separation": 0.19
+  },
+  "macro_leiden": {
+    "algorithm": "leiden/RBConfigurationVertexPartition",
+    "resolution": 0.5,
+    "main_community_target": 16,
+    "accepted_macro_community_range": [12, 30],
+    "minimum_main_community_size": 100
+  },
+  "micro_leiden": {
+    "algorithm": "leiden/RBConfigurationVertexPartition",
+    "resolution": 1.0
+  },
+  "layout_graph": {
+    "self_loops": "drop",
+    "duplicate_undirected_pairs": "coalesce_sum",
+    "directed_semantic_graph": "preserved_read_only",
+    "relation_base_weight": 1.0,
+    "mention_weight": "1 + 0.20 * log1p(max(0, mentions - 1))",
+    "default_entity_type_pair_weight": 1.0,
+    "entity_type_pair_weights": {
+      "Material|Material": 0.86,
+      "Material|Property": 1.0,
+      "Material|Process": 1.0,
+      "Material|ProcessCondition": 1.0,
+      "Property|Property": 0.82,
+      "Process|Process": 0.86,
+      "Process|ProcessCondition": 0.92,
+      "ProcessCondition|ProcessCondition": 0.76
+    },
+    "hub_damping": {
+      "enabled": true,
+      "degree_threshold": 120,
+      "exponent": 0.55,
+      "overlay_degree_threshold": 224
+    }
+  },
+  "multilevel_layout": {
+    "backend": "igraph.drl",
+    "macro_layout_options": "default",
+    "community_layout_options": "default",
+    "minimum_force_layout_nodes": 32,
+    "main_center_extent": 0.52,
+    "local_radius_min": 0.050,
+    "local_radius_max": 0.270,
+    "satellite_radius_min": 0.62,
+    "satellite_radius_max": 0.92,
+    "satellite_group_radius_min": 0.060,
+    "satellite_group_radius_max": 0.155,
+    "isolate_radius_min": 1.02,
+    "isolate_radius_max": 1.24
+  },
+  "visual": {
+    "coordinate_extent": 1.25,
+    "normal_node_size_min": 0.7,
+    "normal_node_size_max": 8.5,
+    "rank_lower_percentile": 5.0,
+    "rank_upper_percentile": 99.5,
+    "node_opacity": 0.8,
+    "max_label_count": 256,
+    "hub_label_count": 160,
+    "community_label_count": 21
+  }
+}

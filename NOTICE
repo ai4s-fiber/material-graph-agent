@@ -1,0 +1,10 @@
+Material Graph Agent (an OmniMat component)
+
+Copyright (c) 2026 FaFa. All rights reserved.
+
+This repository contains proprietary OmniMat software. See LICENSE for the
+terms governing original project code.
+
+Files and components with their own license notice or SPDX identifier remain
+under those terms. Third-party attribution bundled with this snapshot is kept
+next to the corresponding files under third_party/.

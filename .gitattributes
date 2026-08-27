@@ -1,0 +1,8 @@
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+third_party/**/*.patch -text -diff
+third_party/synology-api/LICENSE.txt -text -diff

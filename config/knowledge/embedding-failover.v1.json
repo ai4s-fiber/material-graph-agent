@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "strategy": "disabled",
+  "primary": {
+    "binding_path": "config/knowledge/embedding-binding.v1.json",
+    "provider": "glm_openai_compatible",
+    "generation_id": "glm-embedding-3-1024-halfvec-v1"
+  },
+  "fallback": null,
+  "activation": {
+    "allowed_reasons": [],
+    "switch_at_checkpoint_boundary": true,
+    "require_full_reembedding": true,
+    "allow_mixed_generations": false,
+    "preflight_before_primary_exhaustion": false
+  }
+}

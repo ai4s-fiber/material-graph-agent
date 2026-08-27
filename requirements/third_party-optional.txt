@@ -1,0 +1,27 @@
+# Optional third-party components for the current engineering release.
+# Core dependencies are maintained in the root pyproject.toml.
+# Keep these ranges broad during discovery; create a lock file before deployment.
+
+# Stateful execution graph (MIT)
+langgraph>=1.2,<2
+
+# Local document parsing (MIT)
+docling>=2.0,<3
+
+# GROBID HTTP adapter only (BSD-3-Clause). GROBID itself is an external
+# Apache-2.0 service; see docs/third_party.md.
+httpx>=0.27,<1
+
+# Alternative Apache-2.0 REST client. Use this OR the direct HTTPX adapter;
+# the root pyproject currently lists this package in the documents extra.
+# grobid-client-python>=0.1,<1
+
+# Lightweight graph + vector retrieval (MIT)
+lightrag-hku>=1.5,<2
+
+# Durable PostgreSQL/pgvector/AGE repositories (LGPL-3.0 with exceptions).
+psycopg[binary,pool]>=3.2,<4
+
+# QuickConnect and DSM authentication/discovery (MIT). Install the audited
+# local wheel reconstructed from upstream v0.9.1 plus the checked-in patch.
+requirements/vendor/synology_api-0.9.1-py3-none-any.whl
